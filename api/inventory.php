@@ -17,11 +17,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Require admin authentication
-requireRole(['super_admin', 'admin']);
-
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
+
+// For GET requests (read operations), allow employees, admin, and super_admin
+// For POST/PUT/DELETE (write operations), require admin or super_admin
+if ($method === 'GET') {
+    requireRole(['employee', 'admin', 'super_admin']);
+} else {
+    requireRole(['super_admin', 'admin']);
+}
 
 try {
     $db = getDB();
@@ -49,6 +54,11 @@ try {
 }
 
 function handleGet($db, $action) {
+    // Default action is 'items' if no action specified
+    if (empty($action)) {
+        $action = 'items';
+    }
+    
     switch ($action) {
         case 'items':
             // Get all inventory items
@@ -93,6 +103,48 @@ function handleGet($db, $action) {
             sendJSON(['success' => true, 'data' => $items]);
             break;
             
+        case 'categories':
+            // Get distinct categories
+            $stmt = $db->query("
+                SELECT DISTINCT category 
+                FROM inventory_items 
+                WHERE is_active = TRUE
+                ORDER BY category
+            ");
+            $categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            sendJSON(['success' => true, 'data' => $categories]);
+            break;
+            
+        case 'transactions':
+            // Get inventory transactions
+            $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
+            $itemId = isset($_GET['item_id']) ? (int)$_GET['item_id'] : null;
+            
+            $sql = "
+                SELECT 
+                    it.id, it.item_id, it.transaction_type, 
+                    it.quantity, it.unit_price, it.total_amount,
+                    it.notes, it.created_at, it.created_by,
+                    ii.item_name, ii.unit,
+                    u.full_name as created_by_name
+                FROM inventory_transactions it
+                JOIN inventory_items ii ON it.item_id = ii.id
+                LEFT JOIN users u ON it.created_by = u.id
+            ";
+            
+            if ($itemId) {
+                $sql .= " WHERE it.item_id = ?";
+                $stmt = $db->prepare($sql . " ORDER BY it.created_at DESC LIMIT " . $limit);
+                $stmt->execute([$itemId]);
+            } else {
+                $stmt = $db->prepare($sql . " ORDER BY it.created_at DESC LIMIT " . $limit);
+                $stmt->execute();
+            }
+            
+            $transactions = $stmt->fetchAll();
+            sendJSON(['success' => true, 'data' => $transactions]);
+            break;
+            
         case 'item':
             // Get single item
             $id = $_GET['id'] ?? null;
@@ -113,58 +165,6 @@ function handleGet($db, $action) {
             }
             break;
             
-        case 'transactions':
-            // Get transaction history
-            $itemId = $_GET['item_id'] ?? null;
-            $limit = $_GET['limit'] ?? 50;
-            
-            $sql = "
-                SELECT 
-                    it.*, ii.item_name, ii.unit
-                FROM inventory_transactions it
-                JOIN inventory_items ii ON it.item_id = ii.id
-            ";
-            
-            if ($itemId) {
-                $sql .= " WHERE it.item_id = ?";
-                $stmt = $db->prepare($sql . " ORDER BY it.transaction_date DESC LIMIT " . (int)$limit);
-                $stmt->execute([$itemId]);
-            } else {
-                $stmt = $db->prepare($sql . " ORDER BY it.transaction_date DESC LIMIT " . (int)$limit);
-                $stmt->execute();
-            }
-            
-            $transactions = $stmt->fetchAll();
-            sendJSON(['success' => true, 'data' => $transactions]);
-            break;
-            
-        case 'categories':
-            // Get unique categories
-            $stmt = $db->query("
-                SELECT DISTINCT category
-                FROM inventory_items
-                WHERE is_active = TRUE
-                ORDER BY category
-            ");
-            $categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
-            sendJSON(['success' => true, 'data' => $categories]);
-            break;
-            
-        case 'stats':
-            // Get inventory statistics
-            $stmt = $db->query("
-                SELECT 
-                    COUNT(*) as total_items,
-                    SUM(CASE WHEN current_stock < minimum_stock THEN 1 ELSE 0 END) as low_stock_count,
-                    SUM(current_stock * unit_price) as total_value,
-                    COUNT(DISTINCT category) as categories_count
-                FROM inventory_items
-                WHERE is_active = TRUE
-            ");
-            $stats = $stmt->fetch();
-            sendJSON(['success' => true, 'data' => $stats]);
-            break;
-            
         default:
             sendJSON(['success' => false, 'message' => 'Invalid action'], 400);
     }
@@ -176,114 +176,160 @@ function handlePost($db, $action) {
     switch ($action) {
         case 'item':
             // Create new inventory item
-            $itemName = $input['item_name'] ?? '';
-            $category = $input['category'] ?? '';
-            $unit = $input['unit'] ?? '';
-            $currentStock = $input['current_stock'] ?? 0;
-            $minimumStock = $input['minimum_stock'] ?? 0;
-            $maximumStock = $input['maximum_stock'] ?? null;
-            $unitPrice = $input['unit_price'] ?? 0;
-            $supplier = $input['supplier'] ?? '';
-            
-            if (empty($itemName) || empty($category) || empty($unit)) {
+            if (!isset($input['item_name']) || !isset($input['category']) || !isset($input['unit'])) {
                 sendJSON(['success' => false, 'message' => 'Item name, category, and unit are required'], 400);
             }
             
             $stmt = $db->prepare("
                 INSERT INTO inventory_items 
-                (item_name, category, unit, current_stock, minimum_stock, maximum_stock, unit_price, supplier)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (item_name, category, unit, current_stock, minimum_stock, maximum_stock, 
+                 unit_price, supplier, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
             ");
+            
             $stmt->execute([
-                $itemName, $category, $unit, $currentStock, 
-                $minimumStock, $maximumStock, $unitPrice, $supplier
+                sanitizeInput($input['item_name']),
+                sanitizeInput($input['category']),
+                sanitizeInput($input['unit']),
+                $input['current_stock'] ?? 0,
+                $input['minimum_stock'] ?? 0,
+                $input['maximum_stock'] ?? null,
+                $input['unit_price'] ?? 0,
+                sanitizeInput($input['supplier'] ?? null)
             ]);
             
             $itemId = $db->lastInsertId();
             
-            // Log initial stock if any
-            if ($currentStock > 0) {
-                $stmt = $db->prepare("
-                    INSERT INTO inventory_transactions 
-                    (item_id, transaction_type, quantity, previous_stock, new_stock, notes, performed_by, user_type)
-                    VALUES (?, 'restock', ?, 0, ?, 'Initial stock', ?, ?)
-                ");
-                $stmt->execute([
-                    $itemId, $currentStock, $currentStock,
-                    $_SESSION['user_id'], $_SESSION['user_type']
-                ]);
-            }
+            // Log audit
+            logAudit('inventory_item', $itemId, 'create', null, json_encode($input), 
+                     $_SESSION['user_id'] ?? null, $_SESSION['user_type'] ?? 'admin');
             
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Created inventory item: $itemName", 'create', 'inventory_items', $itemId);
-            
-            sendJSON(['success' => true, 'message' => 'Inventory item created', 'id' => $itemId]);
+            sendJSON(['success' => true, 'message' => 'Inventory item created successfully', 'id' => $itemId]);
             break;
             
-        case 'transaction':
-            // Record inventory transaction (restock, usage, etc.)
-            $itemId = $input['item_id'] ?? null;
-            $transactionType = $input['transaction_type'] ?? '';
-            $quantity = $input['quantity'] ?? 0;
-            $notes = $input['notes'] ?? '';
-            
-            if (!$itemId || !$transactionType || $quantity <= 0) {
-                sendJSON(['success' => false, 'message' => 'Item ID, transaction type, and valid quantity are required'], 400);
+        case 'restock':
+            // Restock an item
+            if (!isset($input['item_id']) || !isset($input['quantity'])) {
+                sendJSON(['success' => false, 'message' => 'Item ID and quantity are required'], 400);
             }
             
-            // Validate transaction type
-            $validTypes = ['restock', 'usage', 'adjustment', 'waste'];
-            if (!in_array($transactionType, $validTypes)) {
-                sendJSON(['success' => false, 'message' => 'Invalid transaction type'], 400);
+            $db->beginTransaction();
+            
+            try {
+                // Get current item
+                $stmt = $db->prepare("SELECT * FROM inventory_items WHERE id = ?");
+                $stmt->execute([$input['item_id']]);
+                $item = $stmt->fetch();
+                
+                if (!$item) {
+                    $db->rollBack();
+                    sendJSON(['success' => false, 'message' => 'Item not found'], 404);
+                }
+                
+                $newStock = $item['current_stock'] + $input['quantity'];
+                
+                // Update stock
+                $stmt = $db->prepare("
+                    UPDATE inventory_items 
+                    SET current_stock = ?, last_restocked = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([$newStock, $input['item_id']]);
+                
+                // Record transaction
+                $unitPrice = $input['unit_price'] ?? $item['unit_price'];
+                $totalAmount = $unitPrice * $input['quantity'];
+                
+                $stmt = $db->prepare("
+                    INSERT INTO inventory_transactions 
+                    (item_id, transaction_type, quantity, unit_price, total_amount, notes, created_by)
+                    VALUES (?, 'restock', ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([
+                    $input['item_id'],
+                    $input['quantity'],
+                    $unitPrice,
+                    $totalAmount,
+                    sanitizeInput($input['notes'] ?? 'Restock'),
+                    $_SESSION['user_id'] ?? null
+                ]);
+                
+                $db->commit();
+                
+                // Log audit
+                logAudit('inventory_restock', $input['item_id'], 'restock', 
+                         $item['current_stock'], $newStock, 
+                         $_SESSION['user_id'] ?? null, $_SESSION['user_type'] ?? 'admin');
+                
+                sendJSON(['success' => true, 'message' => 'Item restocked successfully', 'new_stock' => $newStock]);
+                
+            } catch (Exception $e) {
+                $db->rollBack();
+                throw $e;
+            }
+            break;
+            
+        case 'use':
+            // Use/consume inventory
+            if (!isset($input['item_id']) || !isset($input['quantity'])) {
+                sendJSON(['success' => false, 'message' => 'Item ID and quantity are required'], 400);
             }
             
-            // Get current stock
-            $stmt = $db->prepare("SELECT current_stock, item_name FROM inventory_items WHERE id = ?");
-            $stmt->execute([$itemId]);
-            $item = $stmt->fetch();
+            $db->beginTransaction();
             
-            if (!$item) {
-                sendJSON(['success' => false, 'message' => 'Item not found'], 404);
+            try {
+                // Get current item
+                $stmt = $db->prepare("SELECT * FROM inventory_items WHERE id = ?");
+                $stmt->execute([$input['item_id']]);
+                $item = $stmt->fetch();
+                
+                if (!$item) {
+                    $db->rollBack();
+                    sendJSON(['success' => false, 'message' => 'Item not found'], 404);
+                }
+                
+                if ($item['current_stock'] < $input['quantity']) {
+                    $db->rollBack();
+                    sendJSON(['success' => false, 'message' => 'Insufficient stock'], 400);
+                }
+                
+                $newStock = $item['current_stock'] - $input['quantity'];
+                
+                // Update stock
+                $stmt = $db->prepare("UPDATE inventory_items SET current_stock = ? WHERE id = ?");
+                $stmt->execute([$newStock, $input['item_id']]);
+                
+                // Record transaction
+                $unitPrice = $item['unit_price'];
+                $totalAmount = $unitPrice * $input['quantity'];
+                
+                $stmt = $db->prepare("
+                    INSERT INTO inventory_transactions 
+                    (item_id, transaction_type, quantity, unit_price, total_amount, notes, created_by)
+                    VALUES (?, 'use', ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([
+                    $input['item_id'],
+                    $input['quantity'],
+                    $unitPrice,
+                    $totalAmount,
+                    sanitizeInput($input['notes'] ?? 'Stock used'),
+                    $_SESSION['user_id'] ?? null
+                ]);
+                
+                $db->commit();
+                
+                // Log audit
+                logAudit('inventory_use', $input['item_id'], 'use', 
+                         $item['current_stock'], $newStock, 
+                         $_SESSION['user_id'] ?? null, $_SESSION['user_type'] ?? 'admin');
+                
+                sendJSON(['success' => true, 'message' => 'Stock updated successfully', 'new_stock' => $newStock]);
+                
+            } catch (Exception $e) {
+                $db->rollBack();
+                throw $e;
             }
-            
-            $previousStock = $item['current_stock'];
-            
-            // Calculate new stock
-            if (in_array($transactionType, ['restock', 'adjustment'])) {
-                $newStock = $previousStock + $quantity;
-            } else { // usage or waste
-                $newStock = max(0, $previousStock - $quantity);
-            }
-            
-            // Update inventory
-            $stmt = $db->prepare("
-                UPDATE inventory_items
-                SET current_stock = ?,
-                    last_restocked = IF(? = 'restock', NOW(), last_restocked),
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-            $stmt->execute([$newStock, $transactionType, $itemId]);
-            
-            // Log transaction
-            $stmt = $db->prepare("
-                INSERT INTO inventory_transactions 
-                (item_id, transaction_type, quantity, previous_stock, new_stock, notes, performed_by, user_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([
-                $itemId, $transactionType, $quantity, $previousStock, 
-                $newStock, $notes, $_SESSION['user_id'], $_SESSION['user_type']
-            ]);
-            
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Recorded $transactionType transaction for: " . $item['item_name'], 'update', 'inventory_items', $itemId);
-            
-            sendJSON([
-                'success' => true, 
-                'message' => 'Transaction recorded',
-                'new_stock' => $newStock
-            ]);
             break;
             
         default:
@@ -294,73 +340,66 @@ function handlePost($db, $action) {
 function handlePut($db, $action) {
     $input = json_decode(file_get_contents('php://input'), true);
     
-    switch ($action) {
-        case 'item':
-            // Update inventory item
-            $id = $input['id'] ?? null;
-            $itemName = $input['item_name'] ?? '';
-            $category = $input['category'] ?? '';
-            $unit = $input['unit'] ?? '';
-            $minimumStock = $input['minimum_stock'] ?? 0;
-            $maximumStock = $input['maximum_stock'] ?? null;
-            $unitPrice = $input['unit_price'] ?? 0;
-            $supplier = $input['supplier'] ?? '';
-            $isActive = $input['is_active'] ?? true;
-            
-            if (!$id || empty($itemName) || empty($category) || empty($unit)) {
-                sendJSON(['success' => false, 'message' => 'ID, item name, category, and unit are required'], 400);
-            }
-            
-            $stmt = $db->prepare("
-                UPDATE inventory_items
-                SET item_name = ?, category = ?, unit = ?,
-                    minimum_stock = ?, maximum_stock = ?, unit_price = ?,
-                    supplier = ?, is_active = ?
-                WHERE id = ?
-            ");
-            $stmt->execute([
-                $itemName, $category, $unit, $minimumStock, 
-                $maximumStock, $unitPrice, $supplier, $isActive ? 1 : 0, $id
-            ]);
-            
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Updated inventory item: $itemName", 'update', 'inventory_items', $id);
-            
-            sendJSON(['success' => true, 'message' => 'Inventory item updated']);
-            break;
-            
-        default:
-            sendJSON(['success' => false, 'message' => 'Invalid action'], 400);
+    if ($action === 'item') {
+        // Update inventory item
+        if (!isset($input['id'])) {
+            sendJSON(['success' => false, 'message' => 'Item ID is required'], 400);
+        }
+        
+        // Get old values for audit
+        $stmt = $db->prepare("SELECT * FROM inventory_items WHERE id = ?");
+        $stmt->execute([$input['id']]);
+        $oldItem = $stmt->fetch();
+        
+        $stmt = $db->prepare("
+            UPDATE inventory_items 
+            SET item_name = ?, category = ?, unit = ?, 
+                current_stock = ?, minimum_stock = ?, maximum_stock = ?,
+                unit_price = ?, supplier = ?
+            WHERE id = ?
+        ");
+        
+        $stmt->execute([
+            sanitizeInput($input['item_name']),
+            sanitizeInput($input['category']),
+            sanitizeInput($input['unit']),
+            $input['current_stock'],
+            $input['minimum_stock'],
+            $input['maximum_stock'] ?? null,
+            $input['unit_price'] ?? 0,
+            sanitizeInput($input['supplier'] ?? null),
+            $input['id']
+        ]);
+        
+        // Log audit
+        logAudit('inventory_item', $input['id'], 'update', 
+                 json_encode($oldItem), json_encode($input), 
+                 $_SESSION['user_id'] ?? null, $_SESSION['user_type'] ?? 'admin');
+        
+        sendJSON(['success' => true, 'message' => 'Inventory item updated successfully']);
+    } else {
+        sendJSON(['success' => false, 'message' => 'Invalid action'], 400);
     }
 }
 
 function handleDelete($db, $action) {
     $input = json_decode(file_get_contents('php://input'), true);
     
-    switch ($action) {
-        case 'item':
-            // Soft delete inventory item (set is_active to false)
-            $id = $input['id'] ?? null;
-            if (!$id) {
-                sendJSON(['success' => false, 'message' => 'ID required'], 400);
-            }
-            
-            // Get item name for audit
-            $stmt = $db->prepare("SELECT item_name FROM inventory_items WHERE id = ?");
-            $stmt->execute([$id]);
-            $item = $stmt->fetch();
-            
-            $stmt = $db->prepare("UPDATE inventory_items SET is_active = FALSE WHERE id = ?");
-            $stmt->execute([$id]);
-            
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Deleted inventory item: " . ($item['item_name'] ?? 'Unknown'), 'delete', 'inventory_items', $id);
-            
-            sendJSON(['success' => true, 'message' => 'Inventory item deleted']);
-            break;
-            
-        default:
-            sendJSON(['success' => false, 'message' => 'Invalid action'], 400);
+    if ($action === 'item') {
+        // Soft delete inventory item
+        if (!isset($input['id'])) {
+            sendJSON(['success' => false, 'message' => 'Item ID is required'], 400);
+        }
+        
+        $stmt = $db->prepare("UPDATE inventory_items SET is_active = 0 WHERE id = ?");
+        $stmt->execute([$input['id']]);
+        
+        // Log audit
+        logAudit('inventory_item', $input['id'], 'delete', null, null, 
+                 $_SESSION['user_id'] ?? null, $_SESSION['user_type'] ?? 'admin');
+        
+        sendJSON(['success' => true, 'message' => 'Inventory item deleted successfully']);
+    } else {
+        sendJSON(['success' => false, 'message' => 'Invalid action'], 400);
     }
 }
-?>

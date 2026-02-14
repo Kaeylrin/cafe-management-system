@@ -17,11 +17,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Require admin authentication
-requireRole(['super_admin', 'admin']);
-
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
+
+// Debug logging (remove in production)
+if (ENABLE_DEBUG) {
+    error_log("Menu API - Method: $method, Action: $action");
+    error_log("Menu API - Session data: " . json_encode($_SESSION));
+    error_log("Menu API - User type: " . ($_SESSION['user_type'] ?? 'NOT SET'));
+}
+
+// For GET requests (read operations), allow public access for menu items
+// For POST/PUT/DELETE (write operations), require admin or super_admin
+if ($method === 'GET') {
+    // Allow public access to menu - no authentication needed for customers
+    // This enables customer menu.php to work
+} else {
+    // Write operations require admin
+    requireRole(['super_admin', 'admin']);
+}
 
 try {
     $db = getDB();
@@ -112,7 +126,19 @@ function handleGet($db, $action) {
             break;
             
         default:
-            sendJSON(['success' => false, 'message' => 'Invalid action'], 400);
+            // Default: return all items with categories
+            $stmt = $db->query("
+                SELECT 
+                    mi.id, mi.category_id, mi.name, mi.description, 
+                    mi.price, mi.image_url, mi.is_available, mi.is_featured,
+                    mi.display_order,
+                    mc.name as category_name
+                FROM menu_items mi
+                JOIN menu_categories mc ON mi.category_id = mc.id
+                ORDER BY mc.display_order, mi.display_order, mi.name
+            ");
+            $items = $stmt->fetchAll();
+            sendJSON(['success' => true, 'data' => $items]);
     }
 }
 
@@ -122,62 +148,54 @@ function handlePost($db, $action) {
     switch ($action) {
         case 'category':
             // Create new category
-            $name = $input['name'] ?? '';
-            $description = $input['description'] ?? '';
-            $displayOrder = $input['display_order'] ?? 0;
-            
-            if (empty($name)) {
+            if (!isset($input['name'])) {
                 sendJSON(['success' => false, 'message' => 'Category name is required'], 400);
             }
             
             $stmt = $db->prepare("
-                INSERT INTO menu_categories (name, description, display_order)
-                VALUES (?, ?, ?)
+                INSERT INTO menu_categories (name, description, display_order, is_active)
+                VALUES (?, ?, ?, ?)
             ");
-            $stmt->execute([$name, $description, $displayOrder]);
             
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Created menu category: $name", 'create', 'menu_categories', $db->lastInsertId());
+            $stmt->execute([
+                sanitizeInput($input['name']),
+                sanitizeInput($input['description'] ?? ''),
+                $input['display_order'] ?? 0,
+                isset($input['is_active']) ? (int)$input['is_active'] : 1
+            ]);
             
-            sendJSON(['success' => true, 'message' => 'Category created', 'id' => $db->lastInsertId()]);
+            logAudit('menu_category', $db->lastInsertId(), 'create', null, json_encode($input), $_SESSION['user_id'] ?? null, 'admin');
+            
+            sendJSON(['success' => true, 'message' => 'Category created successfully', 'id' => $db->lastInsertId()]);
             break;
             
         case 'item':
+        default:
             // Create new menu item
-            $categoryId = $input['category_id'] ?? null;
-            $name = $input['name'] ?? '';
-            $description = $input['description'] ?? '';
-            $price = $input['price'] ?? 0;
-            $imageUrl = $input['image_url'] ?? '';
-            $isAvailable = $input['is_available'] ?? true;
-            $isFeatured = $input['is_featured'] ?? false;
-            $displayOrder = $input['display_order'] ?? 0;
-            
-            if (empty($name) || !$categoryId || $price <= 0) {
-                sendJSON(['success' => false, 'message' => 'Name, category, and valid price are required'], 400);
+            if (!isset($input['name']) || !isset($input['category_id']) || !isset($input['price'])) {
+                sendJSON(['success' => false, 'message' => 'Name, category, and price are required'], 400);
             }
             
             $stmt = $db->prepare("
                 INSERT INTO menu_items 
-                (category_id, name, description, price, image_url, is_available, is_featured, display_order, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (category_id, name, description, price, image_url, is_available, is_featured, display_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ");
+            
             $stmt->execute([
-                $categoryId, $name, $description, $price, $imageUrl,
-                $isAvailable ? 1 : 0, $isFeatured ? 1 : 0, $displayOrder,
-                $_SESSION['user_id']
+                $input['category_id'],
+                sanitizeInput($input['name']),
+                sanitizeInput($input['description'] ?? ''),
+                $input['price'],
+                sanitizeInput($input['image_url'] ?? ''),
+                isset($input['is_available']) ? (int)$input['is_available'] : 1,
+                isset($input['is_featured']) ? (int)$input['is_featured'] : 0,
+                $input['display_order'] ?? 0
             ]);
             
-            $itemId = $db->lastInsertId();
+            logAudit('menu_item', $db->lastInsertId(), 'create', null, json_encode($input), $_SESSION['user_id'] ?? null, 'admin');
             
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Created menu item: $name", 'create', 'menu_items', $itemId);
-            
-            sendJSON(['success' => true, 'message' => 'Menu item created', 'id' => $itemId]);
-            break;
-            
-        default:
-            sendJSON(['success' => false, 'message' => 'Invalid action'], 400);
+            sendJSON(['success' => true, 'message' => 'Menu item created successfully', 'id' => $db->lastInsertId()]);
     }
 }
 
@@ -187,84 +205,58 @@ function handlePut($db, $action) {
     switch ($action) {
         case 'category':
             // Update category
-            $id = $input['id'] ?? null;
-            $name = $input['name'] ?? '';
-            $description = $input['description'] ?? '';
-            $displayOrder = $input['display_order'] ?? 0;
-            $isActive = $input['is_active'] ?? true;
-            
-            if (!$id || empty($name)) {
-                sendJSON(['success' => false, 'message' => 'ID and name are required'], 400);
+            if (!isset($input['id'])) {
+                sendJSON(['success' => false, 'message' => 'Category ID is required'], 400);
             }
             
             $stmt = $db->prepare("
-                UPDATE menu_categories
+                UPDATE menu_categories 
                 SET name = ?, description = ?, display_order = ?, is_active = ?
                 WHERE id = ?
             ");
-            $stmt->execute([$name, $description, $displayOrder, $isActive ? 1 : 0, $id]);
             
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Updated menu category: $name", 'update', 'menu_categories', $id);
+            $stmt->execute([
+                sanitizeInput($input['name']),
+                sanitizeInput($input['description'] ?? ''),
+                $input['display_order'] ?? 0,
+                isset($input['is_active']) ? (int)$input['is_active'] : 1,
+                $input['id']
+            ]);
             
-            sendJSON(['success' => true, 'message' => 'Category updated']);
+            logAudit('menu_category', $input['id'], 'update', null, json_encode($input), $_SESSION['user_id'] ?? null, 'admin');
+            
+            sendJSON(['success' => true, 'message' => 'Category updated successfully']);
             break;
             
         case 'item':
+        default:
             // Update menu item
-            $id = $input['id'] ?? null;
-            $categoryId = $input['category_id'] ?? null;
-            $name = $input['name'] ?? '';
-            $description = $input['description'] ?? '';
-            $price = $input['price'] ?? 0;
-            $imageUrl = $input['image_url'] ?? '';
-            $isAvailable = $input['is_available'] ?? true;
-            $isFeatured = $input['is_featured'] ?? false;
-            $displayOrder = $input['display_order'] ?? 0;
-            
-            if (!$id || empty($name) || !$categoryId || $price <= 0) {
-                sendJSON(['success' => false, 'message' => 'ID, name, category, and valid price are required'], 400);
+            if (!isset($input['id'])) {
+                sendJSON(['success' => false, 'message' => 'Item ID is required'], 400);
             }
             
             $stmt = $db->prepare("
-                UPDATE menu_items
-                SET category_id = ?, name = ?, description = ?, price = ?,
+                UPDATE menu_items 
+                SET category_id = ?, name = ?, description = ?, price = ?, 
                     image_url = ?, is_available = ?, is_featured = ?, display_order = ?
                 WHERE id = ?
             ");
+            
             $stmt->execute([
-                $categoryId, $name, $description, $price, $imageUrl,
-                $isAvailable ? 1 : 0, $isFeatured ? 1 : 0, $displayOrder, $id
+                $input['category_id'],
+                sanitizeInput($input['name']),
+                sanitizeInput($input['description'] ?? ''),
+                $input['price'],
+                sanitizeInput($input['image_url'] ?? ''),
+                isset($input['is_available']) ? (int)$input['is_available'] : 1,
+                isset($input['is_featured']) ? (int)$input['is_featured'] : 0,
+                $input['display_order'] ?? 0,
+                $input['id']
             ]);
             
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Updated menu item: $name", 'update', 'menu_items', $id);
+            logAudit('menu_item', $input['id'], 'update', null, json_encode($input), $_SESSION['user_id'] ?? null, 'admin');
             
-            sendJSON(['success' => true, 'message' => 'Menu item updated']);
-            break;
-            
-        case 'toggle-availability':
-            // Toggle item availability
-            $id = $input['id'] ?? null;
-            if (!$id) {
-                sendJSON(['success' => false, 'message' => 'ID required'], 400);
-            }
-            
-            $stmt = $db->prepare("
-                UPDATE menu_items
-                SET is_available = NOT is_available
-                WHERE id = ?
-            ");
-            $stmt->execute([$id]);
-            
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Toggled availability for menu item ID: $id", 'update', 'menu_items', $id);
-            
-            sendJSON(['success' => true, 'message' => 'Availability toggled']);
-            break;
-            
-        default:
-            sendJSON(['success' => false, 'message' => 'Invalid action'], 400);
+            sendJSON(['success' => true, 'message' => 'Menu item updated successfully']);
     }
 }
 
@@ -273,49 +265,40 @@ function handleDelete($db, $action) {
     
     switch ($action) {
         case 'category':
-            // Delete category (will cascade delete items)
-            $id = $input['id'] ?? null;
-            if (!$id) {
-                sendJSON(['success' => false, 'message' => 'ID required'], 400);
+            // Delete category
+            if (!isset($input['id'])) {
+                sendJSON(['success' => false, 'message' => 'Category ID is required'], 400);
             }
             
-            // Get category name for audit
-            $stmt = $db->prepare("SELECT name FROM menu_categories WHERE id = ?");
-            $stmt->execute([$id]);
-            $category = $stmt->fetch();
+            // Check if category has items
+            $stmt = $db->prepare("SELECT COUNT(*) as count FROM menu_items WHERE category_id = ?");
+            $stmt->execute([$input['id']]);
+            $result = $stmt->fetch();
+            
+            if ($result['count'] > 0) {
+                sendJSON(['success' => false, 'message' => 'Cannot delete category with items. Please reassign or delete the items first.'], 400);
+            }
             
             $stmt = $db->prepare("DELETE FROM menu_categories WHERE id = ?");
-            $stmt->execute([$id]);
+            $stmt->execute([$input['id']]);
             
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Deleted menu category: " . ($category['name'] ?? 'Unknown'), 'delete', 'menu_categories', $id);
+            logAudit('menu_category', $input['id'], 'delete', null, null, $_SESSION['user_id'] ?? null, 'admin');
             
-            sendJSON(['success' => true, 'message' => 'Category deleted']);
+            sendJSON(['success' => true, 'message' => 'Category deleted successfully']);
             break;
             
         case 'item':
+        default:
             // Delete menu item
-            $id = $input['id'] ?? null;
-            if (!$id) {
-                sendJSON(['success' => false, 'message' => 'ID required'], 400);
+            if (!isset($input['id'])) {
+                sendJSON(['success' => false, 'message' => 'Item ID is required'], 400);
             }
             
-            // Get item name for audit
-            $stmt = $db->prepare("SELECT name FROM menu_items WHERE id = ?");
-            $stmt->execute([$id]);
-            $item = $stmt->fetch();
-            
             $stmt = $db->prepare("DELETE FROM menu_items WHERE id = ?");
-            $stmt->execute([$id]);
+            $stmt->execute([$input['id']]);
             
-            logAudit($_SESSION['user_type'], $_SESSION['user_id'], $_SESSION['username'],
-                    "Deleted menu item: " . ($item['name'] ?? 'Unknown'), 'delete', 'menu_items', $id);
+            logAudit('menu_item', $input['id'], 'delete', null, null, $_SESSION['user_id'] ?? null, 'admin');
             
-            sendJSON(['success' => true, 'message' => 'Menu item deleted']);
-            break;
-            
-        default:
-            sendJSON(['success' => false, 'message' => 'Invalid action'], 400);
+            sendJSON(['success' => true, 'message' => 'Menu item deleted successfully']);
     }
 }
-?>

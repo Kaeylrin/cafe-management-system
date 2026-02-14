@@ -5,6 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Optional inline style to make the admin link look neat */
+        .admin-link {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
+        .admin-link a {
+            color: #777;
+            text-decoration: none;
+        }
+        .admin-link a:hover {
+            text-decoration: underline;
+            color: #333;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -35,6 +51,11 @@
                 <div class="signup-link">
                     Don't have an account? <a href="../Registration/registration.html">Sign up</a>
                 </div>
+
+                <div class="admin-link">
+                    <a href="admin-login.html">Login as Admin</a>
+                </div>
+
             </form>
         </div>
     </div>

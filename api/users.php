@@ -20,7 +20,7 @@ try {
     $db = getDB();
     
     switch ($method) {
-        case 'POST': // Create new user
+        case 'POST': // Create new user - SUPER ADMIN ONLY
             handleCreateUser($db);
             break;
             

@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Navigation -->
     <nav class="navbar">
         <div class="nav-container">
             <div class="logo">Café Nowa</div>
@@ -53,7 +52,6 @@
         </div>
     </nav>
 
-    <!-- Cart Sidebar -->
     <div class="cart-sidebar" id="cartSidebar">
         <div class="cart-header">
             <h2>Your Cart</h2>
@@ -71,10 +69,8 @@
         </div>
     </div>
 
-    <!-- Cart Overlay -->
     <div class="cart-overlay" id="cartOverlay"></div>
 
-    <!-- Hero Section -->
     <section id="home" class="hero">
         <div class="hero-content">
             <h1 class="hero-title">Where Every Cup Tells a Story</h1>
@@ -90,7 +86,6 @@
         </div>
     </section>
 
-    <!-- About Section -->
     <section id="about" class="about">
         <div class="container">
             <div class="about-content">
@@ -121,7 +116,6 @@
         </div>
     </section>
 
-    <!-- Menu Section -->
     <section id="menu" class="menu">
         <div class="container">
             <div class="section-header">
@@ -138,7 +132,6 @@
             </div>
 
             <div class="menu-grid" id="menuGrid">
-                <!-- Hot Coffee -->
                 <div class="menu-item" data-category="hot" data-name="Classic Espresso" data-price="3.50">
                     <div class="menu-item-image">
                         <img src="assets/espresso.jpg" alt="Espresso">
@@ -181,7 +174,6 @@
                     </div>
                 </div>
 
-                <!-- Cold Coffee -->
                 <div class="menu-item" data-category="cold" data-name="Cold Brew" data-price="5.00">
                     <div class="menu-item-image">
                         <img src="assets/coldbrew.jpg" alt="Cold Brew">
@@ -224,7 +216,6 @@
                     </div>
                 </div>
 
-                <!-- Specialty -->
                 <div class="menu-item" data-category="specialty" data-name="Mocha Delight" data-price="5.25">
                     <div class="menu-item-image">
                         <img src="assets/mocha.jpg" alt="Mocha">
@@ -267,10 +258,14 @@
                     </div>
                 </div>
             </div>
+
+            <div style="text-align: center; margin-top: 40px;">
+                <a href="menu.php" class="btn-primary" style="text-decoration: none; display: inline-block;">View Full Menu</a>
+            </div>
+
         </div>
     </section>
 
-    <!-- Gallery Section -->
     <section id="gallery" class="gallery">
         <div class="container">
             <div class="section-header">
@@ -294,7 +289,6 @@
         </div>
     </section>
 
-    <!-- Contact Section -->
     <section id="contact" class="contact">
         <div class="container">
             <div class="contact-content">
@@ -326,7 +320,6 @@
         </div>
     </section>
 
-    <!-- Checkout Modal -->
     <div class="modal" id="checkoutModal">
         <div class="modal-content checkout-modal">
             <span class="close" id="closeCheckout">&times;</span>
@@ -343,7 +336,6 @@
         </div>
     </div>
 
-    <!-- Order Confirmation Modal -->
     <div class="modal" id="confirmationModal">
         <div class="modal-content confirmation-modal">
             <div class="confirmation-icon">✓</div>
@@ -355,7 +347,6 @@
         </div>
     </div>
 
-    <!-- My Orders Modal -->
     <div class="modal" id="ordersModal">
         <div class="modal-content orders-modal">
             <span class="close" id="closeOrders">&times;</span>
@@ -366,7 +357,6 @@
         </div>
     </div>
 
-    <!-- Footer -->
     <footer class="footer">
         <div class="container">
             <div class="footer-content">

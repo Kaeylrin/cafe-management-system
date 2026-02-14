@@ -295,6 +295,84 @@ INSERT INTO inventory_items (item_name, category, unit, current_stock, minimum_s
 ('Napkins', 'Disposables', 'pieces', 2000.00, 500.00, 3000.00, 0.30, 'Packaging Supplier');
 
 -- ============================================
+-- INSERT SAMPLE ORDERS
+-- ============================================
+INSERT INTO orders (order_number, customer_name, customer_email, customer_phone, total_amount, status, order_type, table_number, created_at) VALUES
+('ORD-001', 'Walk-in Customer', NULL, NULL, 315.00, 'pending', 'dine-in', 'T5', NOW() - INTERVAL 5 MINUTE),
+('ORD-002', 'Sarah Johnson', 'sarah@email.com', '555-0123', 485.00, 'pending', 'takeout', NULL, NOW() - INTERVAL 3 MINUTE),
+('ORD-003', 'Mike Chen', 'mike@email.com', '555-0124', 230.00, 'confirmed', 'dine-in', 'T2', NOW() - INTERVAL 15 MINUTE),
+('ORD-004', 'Emily Davis', NULL, '555-0125', 390.00, 'preparing', 'delivery', NULL, NOW() - INTERVAL 20 MINUTE);
+
+-- ============================================
+-- INSERT SAMPLE ORDER ITEMS
+-- ============================================
+-- Order 1 items
+INSERT INTO order_items (order_id, menu_item_id, item_name, quantity, unit_price, subtotal) VALUES
+(1, 3, 'Cappuccino', 2, 150.00, 300.00),
+(1, 19, 'Croissant', 1, 85.00, 85.00);
+
+-- Order 2 items  
+INSERT INTO order_items (order_id, menu_item_id, item_name, quantity, unit_price, subtotal) VALUES
+(2, 8, 'Cold Brew', 2, 170.00, 340.00),
+(2, 20, 'Chocolate Muffin', 1, 95.00, 95.00),
+(2, 18, 'Caramel Macchiato', 1, 175.00, 175.00);
+
+-- Order 3 items
+INSERT INTO order_items (order_id, menu_item_id, item_name, quantity, unit_price, subtotal) VALUES
+(3, 4, 'Latte', 1, 150.00, 150.00),
+(3, 21, 'Blueberry Scone', 1, 90.00, 90.00);
+
+-- Order 4 items
+INSERT INTO order_items (order_id, menu_item_id, item_name, quantity, unit_price, subtotal) VALUES
+(4, 7, 'Iced Latte', 2, 160.00, 320.00),
+(4, 19, 'Croissant', 2, 85.00, 170.00);
+
+-- ============================================
+-- 11. ORDERS TABLE
+-- ============================================
+CREATE TABLE orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    order_number VARCHAR(20) UNIQUE NOT NULL,
+    customer_id INT NULL,
+    customer_name VARCHAR(100) NOT NULL,
+    customer_email VARCHAR(100) NULL,
+    customer_phone VARCHAR(20) NULL,
+    total_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    status ENUM('pending', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled') NOT NULL DEFAULT 'pending',
+    order_type ENUM('dine-in', 'takeout', 'delivery') NOT NULL DEFAULT 'dine-in',
+    table_number VARCHAR(10) NULL,
+    notes TEXT NULL,
+    created_by INT NULL,
+    assigned_to INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP NULL,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
+    FOREIGN KEY (assigned_to) REFERENCES employees(id) ON DELETE SET NULL,
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at),
+    INDEX idx_order_number (order_number)
+) ENGINE=InnoDB;
+
+-- ============================================
+-- 12. ORDER ITEMS TABLE
+-- ============================================
+CREATE TABLE order_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT NOT NULL,
+    menu_item_id INT NOT NULL,
+    item_name VARCHAR(100) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    unit_price DECIMAL(10, 2) NOT NULL,
+    subtotal DECIMAL(10, 2) NOT NULL,
+    special_instructions TEXT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (menu_item_id) REFERENCES menu_items(id) ON DELETE RESTRICT,
+    INDEX idx_order_id (order_id),
+    INDEX idx_menu_item_id (menu_item_id)
+) ENGINE=InnoDB;
+
+-- ============================================
 -- CREATE VIEWS
 -- ============================================
 
@@ -342,6 +420,36 @@ SELECT
 FROM menu_items mi
 JOIN menu_categories mc ON mi.category_id = mc.id
 ORDER BY mc.display_order, mi.display_order;
+
+-- View for active orders (for employees)
+CREATE VIEW vw_active_orders AS
+SELECT 
+    o.id, o.order_number, o.customer_name, o.customer_phone,
+    o.total_amount, o.status, o.order_type, o.table_number,
+    o.notes, o.created_at, o.updated_at,
+    e.full_name as assigned_employee,
+    COUNT(oi.id) as item_count
+FROM orders o
+LEFT JOIN employees e ON o.assigned_to = e.id
+LEFT JOIN order_items oi ON o.id = oi.order_id
+WHERE o.status IN ('pending', 'confirmed', 'preparing', 'ready')
+GROUP BY o.id
+ORDER BY o.created_at ASC;
+
+-- View for sales statistics
+CREATE VIEW vw_sales_stats AS
+SELECT 
+    DATE(completed_at) as sale_date,
+    COUNT(*) as total_orders,
+    SUM(total_amount) as total_revenue,
+    AVG(total_amount) as avg_order_value,
+    COUNT(CASE WHEN order_type = 'dine-in' THEN 1 END) as dine_in_orders,
+    COUNT(CASE WHEN order_type = 'takeout' THEN 1 END) as takeout_orders,
+    COUNT(CASE WHEN order_type = 'delivery' THEN 1 END) as delivery_orders
+FROM orders
+WHERE status = 'completed' AND completed_at IS NOT NULL
+GROUP BY DATE(completed_at)
+ORDER BY sale_date DESC;
 
 -- ============================================
 -- STORED PROCEDURES
