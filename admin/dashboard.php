@@ -22,7 +22,7 @@ $userType = $_SESSION['user_type'] ?? 'admin';
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f6fa; }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #FFCE99 0%, #562F00 100%);
             color: white;
             padding: 20px 40px;
             display: flex;
@@ -62,7 +62,7 @@ $userType = $_SESSION['user_type'] ?? 'admin';
         .stat-card .stat-label { font-size: 12px; color: #999; }
 
         /* BUTTONS */
-        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: transform 0.2s; }
+        .btn-primary { background: linear-gradient(135deg, #FFCE99 0%, #562F00 100%); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: transform 0.2s; }
         .btn-primary:hover { transform: translateY(-2px); }
         .btn-secondary { background: #e0e0e0; color: #333; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-left: 8px; }
         .btn-danger { background: #ff4444; color: white; }
