@@ -1,5 +1,15 @@
+<?php
+session_start();
+
+$isLoggedIn       = isset($_SESSION['customer_logged_in']) && $_SESSION['customer_logged_in'] === true;
+$customerName     = $isLoggedIn ? htmlspecialchars($_SESSION['customer_name'],     ENT_QUOTES) : '';
+$customerUsername = $isLoggedIn ? htmlspecialchars($_SESSION['customer_username'], ENT_QUOTES) : '';
+$customerEmail    = $isLoggedIn ? htmlspecialchars($_SESSION['customer_email'],    ENT_QUOTES) : '';
+$avatarLetter     = $isLoggedIn ? strtoupper(mb_substr($customerName, 0, 1)) : 'U';
+?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +17,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <nav class="navbar">
         <div class="nav-container">
@@ -23,31 +34,28 @@
                     <span class="cart-icon">🛒</span>
                     <span class="cart-count" id="cartCount">0</span>
                 </button>
-                <a href="../login/login.html" class="btn-login" id="loginBtn">Login</a>
-                <div class="user-profile" id="userProfile" style="display: none;">
-                    <div class="profile-trigger" id="profileTrigger">
-                        <div class="profile-avatar" id="profileAvatar">U</div>
-                        <span class="profile-name" id="profileName">User</span>
-                        <span class="profile-arrow">▼</span>
+
+                <?php if ($isLoggedIn): ?>
+                    <div class="user-profile" id="userProfile">
+                        <div class="profile-trigger" id="profileTrigger">
+                            <div class="profile-avatar" id="profileAvatar"><?= $avatarLetter ?></div>
+                            <span class="profile-name" id="profileName"><?= $customerName ?></span>
+                            <span class="profile-arrow">&#9660;</span>
+                        </div>
+                        <div class="profile-dropdown" id="profileDropdown">
+                            <a href="#" id="viewProfileBtn"><span></span> View Profile</a>
+                            <a href="#" id="myOrdersBtn"><span></span> My Orders</a>
+                            <a href="#" id="logoutBtn" onclick="if(confirm('Are you sure you want to logout?')){window.location.href='../login/logout.php';}return false;"><span></span> Logout</a>
+                        </div>
                     </div>
-                    <div class="profile-dropdown" id="profileDropdown">
-                        <a href="#" id="viewProfileBtn">
-                            <span></span> View Profile
-                        </a>
-                        <a href="#" id="myOrdersBtn">
-                            <span></span> My Orders
-                        </a>
-                        <a href="#" id="logoutBtn">
-                            <span></span> Logout
-                        </a>
-                    </div>
-                </div>
+                <?php else: ?>
+                    <a href="../login/login.html" class="btn-login" id="loginBtn">Login</a>
+                <?php endif; ?>
+
                 <button class="order-btn" id="orderNowBtn">Order Now</button>
             </div>
             <div class="hamburger" id="hamburger">
-                <span></span>
-                <span></span>
-                <span></span>
+                <span></span><span></span><span></span>
             </div>
         </div>
     </nav>
@@ -68,7 +76,6 @@
             <button class="checkout-btn" id="checkoutBtn">Proceed to Checkout</button>
         </div>
     </div>
-
     <div class="cart-overlay" id="cartOverlay"></div>
 
     <section id="home" class="hero">
@@ -107,7 +114,7 @@
                             <p>Coffee Varieties</p>
                         </div>
                         <div class="stat-item">
-                            <h3>4.9★</h3>
+                            <h3>4.9&#9733;</h3>
                             <p>Customer Rating</p>
                         </div>
                     </div>
@@ -123,146 +130,98 @@
                 <h2>Signature Beverages</h2>
                 <p>Handcrafted with love, served with passion</p>
             </div>
-
             <div class="menu-categories">
                 <button class="category-btn active" data-category="all">All</button>
                 <button class="category-btn" data-category="hot">Hot Coffee</button>
                 <button class="category-btn" data-category="cold">Cold Brew</button>
                 <button class="category-btn" data-category="specialty">Specialty</button>
             </div>
-
             <div class="menu-grid" id="menuGrid">
                 <div class="menu-item" data-category="hot" data-name="Classic Espresso" data-price="3.50">
-                    <div class="menu-item-image">
-                        <img src="assets/espresso.jpg" alt="Espresso">
-                        <div class="menu-overlay">
-                            <button class="add-to-cart">Add to Cart</button>
-                        </div>
+                    <div class="menu-item-image"><img src="assets/espresso.jpg" alt="Espresso">
+                        <div class="menu-overlay"><button class="add-to-cart">Add to Cart</button></div>
                     </div>
                     <div class="menu-item-info">
                         <h3>Classic Espresso</h3>
-                        <p>Rich and bold single shot</p>
-                        <span class="price">$3.50</span>
+                        <p>Rich and bold single shot</p><span class="price">$3.50</span>
                     </div>
                 </div>
-
                 <div class="menu-item" data-category="hot" data-name="Cappuccino" data-price="4.50">
-                    <div class="menu-item-image">
-                        <img src="assets/capuccino.jpg" alt="Cappuccino">
-                        <div class="menu-overlay">
-                            <button class="add-to-cart">Add to Cart</button>
-                        </div>
+                    <div class="menu-item-image"><img src="assets/capuccino.jpg" alt="Cappuccino">
+                        <div class="menu-overlay"><button class="add-to-cart">Add to Cart</button></div>
                     </div>
                     <div class="menu-item-info">
                         <h3>Cappuccino</h3>
-                        <p>Espresso with steamed milk foam</p>
-                        <span class="price">$4.50</span>
+                        <p>Espresso with steamed milk foam</p><span class="price">$4.50</span>
                     </div>
                 </div>
-
-                <div class="menu-item" data-category="hot" data-name="Caffè Latte" data-price="4.75">
-                    <div class="menu-item-image">
-                        <img src="assets/latte.jpg" alt="Caffe Latte">
-                        <div class="menu-overlay">
-                            <button class="add-to-cart">Add to Cart</button>
-                        </div>
+                <div class="menu-item" data-category="hot" data-name="Caffe Latte" data-price="4.75">
+                    <div class="menu-item-image"><img src="assets/latte.jpg" alt="Caffe Latte">
+                        <div class="menu-overlay"><button class="add-to-cart">Add to Cart</button></div>
                     </div>
                     <div class="menu-item-info">
-                        <h3>Caffè Latte</h3>
-                        <p>Smooth espresso with steamed milk</p>
-                        <span class="price">$4.75</span>
+                        <h3>Caffe Latte</h3>
+                        <p>Smooth espresso with steamed milk</p><span class="price">$4.75</span>
                     </div>
                 </div>
-
                 <div class="menu-item" data-category="cold" data-name="Cold Brew" data-price="5.00">
-                    <div class="menu-item-image">
-                        <img src="assets/coldbrew.jpg" alt="Cold Brew">
-                        <div class="menu-overlay">
-                            <button class="add-to-cart">Add to Cart</button>
-                        </div>
+                    <div class="menu-item-image"><img src="assets/coldbrew.jpg" alt="Cold Brew">
+                        <div class="menu-overlay"><button class="add-to-cart">Add to Cart</button></div>
                     </div>
                     <div class="menu-item-info">
                         <h3>Cold Brew</h3>
-                        <p>Smooth, naturally sweet</p>
-                        <span class="price">$5.00</span>
+                        <p>Smooth, naturally sweet</p><span class="price">$5.00</span>
                     </div>
                 </div>
-
                 <div class="menu-item" data-category="cold" data-name="Iced Latte" data-price="4.75">
-                    <div class="menu-item-image">
-                        <img src="assets/iced-latte.jpg" alt="Iced Latte">
-                        <div class="menu-overlay">
-                            <button class="add-to-cart">Add to Cart</button>
-                        </div>
+                    <div class="menu-item-image"><img src="assets/iced-latte.jpg" alt="Iced Latte">
+                        <div class="menu-overlay"><button class="add-to-cart">Add to Cart</button></div>
                     </div>
                     <div class="menu-item-info">
                         <h3>Iced Latte</h3>
-                        <p>Chilled espresso with milk</p>
-                        <span class="price">$4.75</span>
+                        <p>Chilled espresso with milk</p><span class="price">$4.75</span>
                     </div>
                 </div>
-
-                <div class="menu-item" data-category="cold" data-name="Caramel Frappé" data-price="5.50">
-                    <div class="menu-item-image">
-                        <img src="assets/frappe.jpg" alt="Frappe">
-                        <div class="menu-overlay">
-                            <button class="add-to-cart">Add to Cart</button>
-                        </div>
+                <div class="menu-item" data-category="cold" data-name="Caramel Frappe" data-price="5.50">
+                    <div class="menu-item-image"><img src="assets/frappe.jpg" alt="Frappe">
+                        <div class="menu-overlay"><button class="add-to-cart">Add to Cart</button></div>
                     </div>
                     <div class="menu-item-info">
-                        <h3>Caramel Frappé</h3>
-                        <p>Blended iced coffee perfection</p>
-                        <span class="price">$5.50</span>
+                        <h3>Caramel Frappe</h3>
+                        <p>Blended iced coffee perfection</p><span class="price">$5.50</span>
                     </div>
                 </div>
-
                 <div class="menu-item" data-category="specialty" data-name="Mocha Delight" data-price="5.25">
-                    <div class="menu-item-image">
-                        <img src="assets/mocha.jpg" alt="Mocha">
-                        <div class="menu-overlay">
-                            <button class="add-to-cart">Add to Cart</button>
-                        </div>
+                    <div class="menu-item-image"><img src="assets/mocha.jpg" alt="Mocha">
+                        <div class="menu-overlay"><button class="add-to-cart">Add to Cart</button></div>
                     </div>
                     <div class="menu-item-info">
                         <h3>Mocha Delight</h3>
-                        <p>Espresso with chocolate & cream</p>
-                        <span class="price">$5.25</span>
+                        <p>Espresso with chocolate &amp; cream</p><span class="price">$5.25</span>
                     </div>
                 </div>
-
                 <div class="menu-item" data-category="specialty" data-name="Matcha Latte" data-price="5.50">
-                    <div class="menu-item-image">
-                        <img src="assets/matcha.jpg" alt="Matcha Latte">
-                        <div class="menu-overlay">
-                            <button class="add-to-cart">Add to Cart</button>
-                        </div>
+                    <div class="menu-item-image"><img src="assets/matcha.jpg" alt="Matcha Latte">
+                        <div class="menu-overlay"><button class="add-to-cart">Add to Cart</button></div>
                     </div>
                     <div class="menu-item-info">
                         <h3>Matcha Latte</h3>
-                        <p>Premium Japanese green tea</p>
-                        <span class="price">$5.50</span>
+                        <p>Premium Japanese green tea</p><span class="price">$5.50</span>
                     </div>
                 </div>
-
                 <div class="menu-item" data-category="specialty" data-name="Nowa Special" data-price="6.00">
-                    <div class="menu-item-image">
-                        <img src="assets/signature.jpg" alt="Signature">
-                        <div class="menu-overlay">
-                            <button class="add-to-cart">Add to Cart</button>
-                        </div>
+                    <div class="menu-item-image"><img src="assets/signature.jpg" alt="Signature">
+                        <div class="menu-overlay"><button class="add-to-cart">Add to Cart</button></div>
                     </div>
                     <div class="menu-item-info">
                         <h3>Nowa Special</h3>
-                        <p>Our secret blend recipe</p>
-                        <span class="price">$6.00</span>
+                        <p>Our secret blend recipe</p><span class="price">$6.00</span>
                     </div>
                 </div>
             </div>
-
-            <div style="text-align: center; margin-top: 40px;">
-                <a href="menu.php" class="btn-primary" style="text-decoration: none; display: inline-block;">View Full Menu</a>
+            <div style="text-align:center;margin-top:40px;">
+                <a href="menu.php" class="btn-primary" style="text-decoration:none;display:inline-block;">View Full Menu</a>
             </div>
-
         </div>
     </section>
 
@@ -273,18 +232,10 @@
                 <h2>Moments at Café Nowa</h2>
             </div>
             <div class="gallery-grid">
-                <div class="gallery-item">
-                    <img src="assets/gallery1.jpg" alt="Coffee Art">
-                </div>
-                <div class="gallery-item">
-                    <img src="assets/gallery2.jpg" alt="Barista">
-                </div>
-                <div class="gallery-item">
-                    <img src="assets/gallery3.jpg" alt="Interior">
-                </div>
-                <div class="gallery-item">
-                    <img src="assets/gallery4.jpg" alt="Coffee Beans">
-                </div>
+                <div class="gallery-item"><img src="assets/gallery1.jpg" alt="Coffee Art"></div>
+                <div class="gallery-item"><img src="assets/gallery2.jpg" alt="Barista"></div>
+                <div class="gallery-item"><img src="assets/gallery3.jpg" alt="Interior"></div>
+                <div class="gallery-item"><img src="assets/gallery4.jpg" alt="Coffee Beans"></div>
             </div>
         </div>
     </section>
@@ -297,7 +248,7 @@
                     <h2>Visit Us Today</h2>
                     <div class="info-item">
                         <h4>Location</h4>
-                        <p>123 Coffee Street, Mendez-Nuñez<br>Calabarzon, Philippines</p>
+                        <p>123 Coffee Street, Mendez-Nunez<br>Calabarzon, Philippines</p>
                     </div>
                     <div class="info-item">
                         <h4>Hours</h4>
@@ -338,7 +289,7 @@
 
     <div class="modal" id="confirmationModal">
         <div class="modal-content confirmation-modal">
-            <div class="confirmation-icon">✓</div>
+            <div class="confirmation-icon">&#10003;</div>
             <h2>Order Placed Successfully!</h2>
             <p>Your order number is:</p>
             <div class="order-code" id="orderCode">ABC123</div>
@@ -388,6 +339,16 @@
         </div>
     </footer>
 
+    <!-- PHP session → JS bridge. script.js reads window.APP instead of localStorage -->
+    <script>
+        window.APP = {
+            isLoggedIn: <?php echo $isLoggedIn ? 'true' : 'false'; ?>,
+            customerName: <?php echo json_encode($customerName); ?>,
+            customerUsername: <?php echo json_encode($customerUsername); ?>,
+            customerEmail: <?php echo json_encode($customerEmail); ?>
+        };
+    </script>
     <script src="script.js"></script>
 </body>
+
 </html>

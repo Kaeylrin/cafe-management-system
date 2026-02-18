@@ -1,5 +1,13 @@
+<?php
+session_start();
+
+$isLoggedIn  = isset($_SESSION['customer_logged_in']) && $_SESSION['customer_logged_in'] === true;
+$customerId  = $isLoggedIn ? (int)$_SESSION['customer_id'] : 0;
+$customerName = $isLoggedIn ? htmlspecialchars($_SESSION['customer_name'], ENT_QUOTES) : '';
+?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -33,7 +41,7 @@
         .header h1 {
             font-size: 48px;
             margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
         }
 
         .header p {
@@ -50,7 +58,7 @@
             gap: 15px;
             flex-wrap: wrap;
             align-items: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         }
 
         .search-box {
@@ -144,14 +152,14 @@
             background: white;
             border-radius: 15px;
             overflow: hidden;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
             transition: all 0.3s;
             cursor: pointer;
         }
 
         .menu-item:hover {
             transform: translateY(-10px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
         }
 
         .menu-item.unavailable {
@@ -254,7 +262,7 @@
             transition: all 0.3s;
         }
 
-        .add-to-cart-btn:hover {
+        .add-to-cart-btn:hover:not(:disabled) {
             background: #5568d3;
         }
 
@@ -279,6 +287,29 @@
             font-size: 18px;
         }
 
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: #333;
+            color: white;
+            padding: 14px 22px;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s;
+            z-index: 9999;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
         /* Cart Modal */
         .cart-modal {
             display: none;
@@ -287,7 +318,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.7);
+            background: rgba(0, 0, 0, 0.7);
             z-index: 1000;
             align-items: center;
             justify-content: center;
@@ -419,21 +450,22 @@
             .menu-grid {
                 grid-template-columns: 1fr;
             }
-            
+
             .header h1 {
                 font-size: 32px;
             }
-            
+
             .menu-controls {
                 flex-direction: column;
             }
-            
+
             .search-box {
                 width: 100%;
             }
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -473,58 +505,66 @@
             <div class="cart-footer" id="cartFooter" style="display: none;">
                 <div class="cart-total">
                     <span>Total:</span>
-                    <span id="cartTotal">₱0.00</span>
+                    <span id="cartTotal">&#8369;0.00</span>
                 </div>
                 <button class="checkout-btn" id="checkoutBtn">Proceed to Checkout</button>
             </div>
         </div>
     </div>
 
+    <!-- Toast notification -->
+    <div class="toast" id="toast"></div>
+
+    <!-- PHP injects the customer ID so each account has its own cart key -->
     <script>
+        // ─── Per-customer cart key ─────────────────────────────────────────────
+        // Cart is stored as  cafeCart_<customerId>  in localStorage.
+        // Guest (not logged in) uses  cafeCart_guest  — cleared on login.
+        const CUSTOMER_ID = <?php echo $customerId > 0 ? $customerId : '"guest"'; ?>;
+        const CART_KEY = 'cafeCart_' + CUSTOMER_ID;
+
         let menuItems = [];
-        let cart = JSON.parse(localStorage.getItem('cafeCart')) || [];
+        let cart = JSON.parse(localStorage.getItem(CART_KEY)) || [];
         let currentCategory = 'all';
 
-        // Load menu on page load
+        // ─── Init ──────────────────────────────────────────────────────────────
         document.addEventListener('DOMContentLoaded', function() {
             loadMenu();
             updateCartCount();
 
-            // Event listeners
             document.getElementById('searchInput').addEventListener('input', filterMenu);
             document.getElementById('viewCartBtn').addEventListener('click', openCart);
             document.getElementById('closeCart').addEventListener('click', closeCart);
             document.getElementById('checkoutBtn').addEventListener('click', checkout);
         });
 
+        // ─── Load menu from API ────────────────────────────────────────────────
         async function loadMenu() {
             try {
                 const response = await fetch('../api/menu.php');
                 const data = await response.json();
 
                 if (data.success && data.data) {
-                    // Show ALL menu items from admin, not just available ones
                     menuItems = data.data;
                     populateCategories();
                     renderMenu(menuItems);
                 } else {
-                    document.getElementById('menuGrid').innerHTML = 
+                    document.getElementById('menuGrid').innerHTML =
                         '<div class="no-items">No menu items available at the moment.</div>';
                 }
             } catch (error) {
                 console.error('Error loading menu:', error);
-                document.getElementById('menuGrid').innerHTML = 
+                document.getElementById('menuGrid').innerHTML =
                     '<div class="no-items">Error loading menu. Please refresh the page.</div>';
             }
         }
 
+        // ─── Category buttons ──────────────────────────────────────────────────
         function populateCategories() {
             const categories = ['all', ...new Set(menuItems.map(item => item.category_name))];
-            const filtersDiv = document.getElementById('categoryFilters');
-            
-            filtersDiv.innerHTML = categories.map(cat => `
-                <button class="category-btn ${cat === 'all' ? 'active' : ''}" 
-                        data-category="${cat}" 
+            document.getElementById('categoryFilters').innerHTML = categories.map(cat => `
+                <button class="category-btn ${cat === 'all' ? 'active' : ''}"
+                        data-category="${cat}"
                         onclick="filterByCategory('${cat}')">
                     ${cat.charAt(0).toUpperCase() + cat.slice(1)}
                 </button>
@@ -533,66 +573,54 @@
 
         function filterByCategory(category) {
             currentCategory = category;
-            
-            // Update active button
             document.querySelectorAll('.category-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.category === category);
             });
-            
             filterMenu();
         }
 
         function filterMenu() {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            
             let filtered = menuItems;
-            
-            // Filter by category
+
             if (currentCategory !== 'all') {
-                filtered = filtered.filter(item => 
+                filtered = filtered.filter(item =>
                     item.category_name.toLowerCase() === currentCategory.toLowerCase()
                 );
             }
-            
-            // Filter by search
             if (searchTerm) {
                 filtered = filtered.filter(item =>
                     item.name.toLowerCase().includes(searchTerm) ||
                     (item.description && item.description.toLowerCase().includes(searchTerm))
                 );
             }
-            
             renderMenu(filtered);
         }
 
+        // ─── Render menu grid ──────────────────────────────────────────────────
         function renderMenu(items) {
             const grid = document.getElementById('menuGrid');
-            
             if (items.length === 0) {
                 grid.innerHTML = '<div class="no-items">No items found matching your search.</div>';
                 return;
             }
-
             grid.innerHTML = items.map(item => `
                 <div class="menu-item ${!item.is_available ? 'unavailable' : ''}">
                     <div class="item-image">
-                        ${item.image_url ? 
-                            `<img src="${item.image_url}" alt="${item.name}">` : 
-                            '☕'
-                        }
+                        ${item.image_url ? `<img src="${item.image_url}" alt="${item.name}">` : '&#9749;'}
                     </div>
                     <div class="item-info">
                         <div class="item-category">${item.category_name}</div>
                         <div class="item-header">
                             <div class="item-name">${item.name}</div>
-                            <div class="item-price">₱${parseFloat(item.price).toFixed(2)}</div>
+                            <div class="item-price">&#8369;${parseFloat(item.price).toFixed(2)}</div>
                         </div>
                         <div class="item-description">${item.description || 'Delicious coffee drink'}</div>
                         <div class="item-status ${item.is_available ? 'available' : 'unavailable'}">
-                            ${item.is_available ? '✓ Available' : '✗ Unavailable'}
+                            ${item.is_available ? '&#10003; Available' : '&#10007; Unavailable'}
                         </div>
-                        <button class="add-to-cart-btn" 
-                                onclick="addToCart(${item.id}, '${item.name}', ${item.price})"
+                        <button class="add-to-cart-btn"
+                                onclick="addToCart(${item.id}, '${item.name.replace(/'/g, "\\'")}', ${item.price})"
                                 ${!item.is_available ? 'disabled' : ''}>
                             Add to Cart
                         </button>
@@ -601,25 +629,22 @@
             `).join('');
         }
 
+        // ─── Cart operations ───────────────────────────────────────────────────
         function addToCart(id, name, price) {
-            const existingItem = cart.find(item => item.id === id);
-            
-            if (existingItem) {
-                existingItem.quantity++;
+            const existing = cart.find(item => item.id === id);
+            if (existing) {
+                existing.quantity++;
             } else {
                 cart.push({
-                    id: id,
-                    name: name,
-                    price: price,
+                    id,
+                    name,
+                    price,
                     quantity: 1
                 });
             }
-            
             saveCart();
             updateCartCount();
-            
-            // Show feedback
-            alert(`${name} added to cart!`);
+            showToast(`${name} added to cart!`);
         }
 
         function removeFromCart(id) {
@@ -642,8 +667,9 @@
             }
         }
 
+        // KEY FIX: save to the per-customer key, not a shared one
         function saveCart() {
-            localStorage.setItem('cafeCart', JSON.stringify(cart));
+            localStorage.setItem(CART_KEY, JSON.stringify(cart));
         }
 
         function updateCartCount() {
@@ -651,6 +677,7 @@
             document.getElementById('cartCount').textContent = count;
         }
 
+        // ─── Cart modal ────────────────────────────────────────────────────────
         function openCart() {
             renderCart();
             document.getElementById('cartModal').classList.add('active');
@@ -663,20 +690,19 @@
         function renderCart() {
             const cartItemsDiv = document.getElementById('cartItems');
             const cartFooter = document.getElementById('cartFooter');
-            
+
             if (cart.length === 0) {
                 cartItemsDiv.innerHTML = '<div class="empty-cart">Your cart is empty</div>';
                 cartFooter.style.display = 'none';
                 return;
             }
-            
+
             cartFooter.style.display = 'block';
-            
             cartItemsDiv.innerHTML = cart.map(item => `
                 <div class="cart-item">
                     <div class="cart-item-info">
                         <h4>${item.name}</h4>
-                        <div class="cart-item-price">₱${parseFloat(item.price).toFixed(2)} each</div>
+                        <div class="cart-item-price">&#8369;${parseFloat(item.price).toFixed(2)} each</div>
                     </div>
                     <div class="cart-item-actions">
                         <button class="qty-btn" onclick="updateQuantity(${item.id}, -1)">-</button>
@@ -686,28 +712,33 @@
                     </div>
                 </div>
             `).join('');
-            
+
             const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-            document.getElementById('cartTotal').textContent = '₱' + total.toFixed(2);
+            document.getElementById('cartTotal').textContent = '&#8369;' + total.toFixed(2);
         }
 
+        // ─── Toast helper (replaces alert for add-to-cart) ────────────────────
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2500);
+        }
+
+        // ─── Checkout ──────────────────────────────────────────────────────────
         async function checkout() {
             if (cart.length === 0) {
                 alert('Your cart is empty!');
                 return;
             }
-            
+
             const customerName = prompt('Enter your name:');
             if (!customerName) return;
-            
+
             const customerPhone = prompt('Enter your phone number:');
-            const orderType = confirm('Dine-in? (Click OK for Dine-in, Cancel for Takeout)') ? 'dine-in' : 'takeout';
-            
-            let tableNumber = null;
-            if (orderType === 'dine-in') {
-                tableNumber = prompt('Enter table number:');
-            }
-            
+            const orderType = confirm('Dine-in? (OK = Dine-in, Cancel = Takeout)') ? 'dine-in' : 'takeout';
+            const tableNumber = orderType === 'dine-in' ? prompt('Enter table number:') : null;
+
             const orderData = {
                 customer_name: customerName,
                 customer_phone: customerPhone,
@@ -720,7 +751,7 @@
                     quantity: item.quantity
                 }))
             };
-            
+
             try {
                 const response = await fetch('../api/orders.php', {
                     method: 'POST',
@@ -729,9 +760,8 @@
                     },
                     body: JSON.stringify(orderData)
                 });
-                
                 const data = await response.json();
-                
+
                 if (data.success) {
                     alert(`Order placed successfully! Order #${data.order_number}`);
                     cart = [];
@@ -748,4 +778,5 @@
         }
     </script>
 </body>
+
 </html>
